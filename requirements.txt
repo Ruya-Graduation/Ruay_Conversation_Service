@@ -1,0 +1,20 @@
+# ── Core framework ────────────────────────────────────────────────────────────
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9      # required for UploadFile / multipart form data
+
+# ── Configuration ─────────────────────────────────────────────────────────────
+pydantic-settings>=2.2.0
+python-dotenv>=1.0.0
+
+# ── PDF extraction + chunking ─────────────────────────────────────────────────
+PyMuPDF>=1.24.0
+chonkie[semantic]>=0.4.0
+sentence-transformers>=2.7.0
+
+# ── Embeddings ────────────────────────────────────────────────────────────────
+huggingface-hub>=0.23.0
+
+# ── Database ──────────────────────────────────────────────────────────────────
+motor>=3.4.0
+pymongo>=4.7.0
