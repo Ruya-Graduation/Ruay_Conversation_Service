@@ -58,10 +58,21 @@ class RetrievedChunk(BaseModel):
 class ConversationResponse(BaseModel):
     """Response returned by POST /conversation."""
 
-    answer: str = Field(..., description="The model's reply")
+    answer: str = Field(..., description="The model's reply (output_text)")
     retrieved_chunks: int = Field(..., description="Number of DB chunks used as context")
     model_id: str = Field(..., description="LLM model that generated the answer")
     sources: list[RetrievedChunk] = Field(
         default_factory=list,
         description="The chunks retrieved from the vector DB (for transparency)",
+    )
+    
+    # LLM Response Metadata
+    request_id: str | None = Field(None, description="Request ID from LLM API")
+    region: str | None = Field(None, description="Deployment region")
+    usage: dict | None = Field(None, description="Token usage statistics")
+    estimated_cost_usd: str | None = Field(None, description="Estimated cost in USD")
+    actual_cost_usd: str | None = Field(None, description="Actual cost in USD")
+    status: str | None = Field(None, description="Request status")
+    llm_response_metadata: dict | None = Field(
+        None, description="Any additional metadata from LLM response"
     )

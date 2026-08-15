@@ -124,36 +124,65 @@ async def call_chat(
     )
 
 
-def extract_answer(response_json: dict) -> str:
+def extract_answer(response_json: dict) -> dict:
     """
-    Extract the assistant's reply text from the SBG API response.
-
-    Tries several common response shapes. Falls back to a string
-    representation of the whole response if nothing matches.
+    Extract structured response data from the SBG API response.
+    
+    Returns a dictionary with separated fields:
+    - output_text: The actual answer from the model
+    - request_id: Request identifier
+    - model_id: Model used
+    - region: Deployment region
+    - usage: Token usage statistics
+    - estimated_cost_usd: Estimated cost
+    - actual_cost_usd: Actual cost
+    - status: Request status
+    - (any other fields from the response)
+    
+    This allows the .NET server to access all metadata separately.
     """
+    result = {}
+    
+    # Extract the actual answer text (output_text)
+    output_text = None
+    
+    # Try different response shapes for the answer
+    # Shape: { "output_text": "..." }  (SBG style)
+    if "output_text" in response_json:
+        output_text = str(response_json["output_text"])
     # Shape: { "content": [{"text": "..."}] }   (Anthropic/Bedrock style)
-    if "content" in response_json:
+    elif "content" in response_json:
         content = response_json["content"]
         if isinstance(content, list) and content:
             first = content[0]
             if isinstance(first, dict) and "text" in first:
-                return str(first["text"])
-            if isinstance(first, str):
-                return first
-
+                output_text = str(first["text"])
+            elif isinstance(first, str):
+                output_text = first
     # Shape: { "choices": [{"message": {"content": "..."}}] }  (OpenAI style)
-    if "choices" in response_json:
+    elif "choices" in response_json:
         choices = response_json["choices"]
         if isinstance(choices, list) and choices:
             message = choices[0].get("message", {})
             if "content" in message:
-                return str(message["content"])
-
+                output_text = str(message["content"])
     # Shape: { "text": "..." }  or  { "response": "..." }
-    for key in ("text", "response", "answer", "output", "result"):
-        if key in response_json and isinstance(response_json[key], str):
-            return response_json[key]
-
-    # Last resort: return JSON string so the caller always gets something
-    import json
-    return json.dumps(response_json, ensure_ascii=False)
+    else:
+        for key in ("text", "response", "answer", "output", "result"):
+            if key in response_json and isinstance(response_json[key], str):
+                output_text = response_json[key]
+                break
+    
+    # If we still don't have output_text, use the whole response as JSON
+    if output_text is None:
+        import json
+        output_text = json.dumps(response_json, ensure_ascii=False)
+    
+    result["output_text"] = output_text
+    
+    # Extract all other fields from the response
+    for key, value in response_json.items():
+        if key != "output_text":  # Don't duplicate output_text
+            result[key] = value
+    
+    return result

@@ -3,15 +3,21 @@ app/prompt_builder.py
 ─────────────────────
 ★ THIS IS THE SINGLE PLACE TO EDIT ALL PROMPT LOGIC ★
 
-Two public functions:
+Three public functions:
 
   build_query_text(artifact, question)
       → The string that gets embedded for vector search.
         Changing this changes WHAT the DB retrieves.
 
-  build_system_prompt(artifact, question, chunks)
-      → The system prompt injected into every LLM call.
-        Changing this changes HOW the model answers.
+  build_system_prompt()
+      → The system prompt that defines the assistant's behavior/tone.
+        This is SEPARATE from the artifact data and passages.
+
+  build_user_message(artifact, question, chunks)
+      → Builds the final user message containing:
+        - The actual question
+        - Artifact context
+        - Retrieved knowledge passages
 """
 
 from __future__ import annotations
@@ -52,67 +58,101 @@ def build_query_text(artifact: ArtifactContext, question: str) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 2.  System prompt  (injected into the LLM call)
+# 2.  System prompt  (defines behavior and tone - NOT the data)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def build_system_prompt(
+def build_system_prompt() -> str:
+    """
+    Build the system prompt that defines HOW the assistant should behave.
+    
+    This should contain:
+      • Role definition
+      • Tone and style instructions
+      • General answering guidelines
+    
+    This should NOT contain:
+      • Artifact data (goes in user message)
+      • Retrieved passages (goes in user message)
+      • The user's question (goes in user message)
+    
+    ✏️  Edit this function to change the model's persona, tone, and 
+        general behavior.
+    """
+    
+    return (
+        "You are an expert Egyptologist and archaeologist assistant "
+        "specializing in Ancient Egyptian and Nubian artifacts. "
+        "You have access to a curated knowledge base from the "
+        "UCLA Encyclopedia of Egyptology (UEE).\n\n"
+        
+        "Your role:\n"
+        "- Provide scholarly, precise answers grounded strictly in the provided context\n"
+        "- Cite passage numbers when drawing from specific sources\n"
+        "- Be honest when information is insufficient - never fabricate details\n"
+        "- Use a professional, academic tone while remaining accessible\n"
+        "- Keep answers focused and concise\n"
+        "- Use plain prose; avoid bullet lists unless specifically helpful"
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 3.  User message content  (question + artifact + passages)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def build_user_message(
     artifact: ArtifactContext,
     question: str,
     chunks: list[dict],
 ) -> str:
     """
-    Build the full system prompt for the LLM.
-
-    Sections:
-      • Role definition
-      • Artifact under discussion
-      • Retrieved knowledge passages (numbered)
-      • Answering instructions
-
-    ✏️  Edit this function to change the model's persona, tone, citation
-        style, fallback behaviour, or any other answering rules.
-
+    Build the content for the final user message that will be sent to the LLM.
+    
+    This combines:
+      • The user's actual question
+      • Artifact metadata
+      • Retrieved knowledge passages from the database
+    
+    This gets placed as the last message in the messages array with role="user".
+    
+    ✏️  Edit this function to change how the artifact data and retrieved 
+        passages are formatted in the user message.
+    
     Args:
         artifact:  The ArtifactContext from the request.
-        question:  The user's current question (included for context).
+        question:  The user's current question.
         chunks:    List of dicts returned by vector_search() — each has
                    keys: chunk_id, title, text, page_start, page_end, score.
     """
-
-    # ── Role ──────────────────────────────────────────────────────────────────
-    role_section = (
-        "You are an expert Egyptologist and archaeologist assistant "
-        "specializing in Ancient Egyptian and Nubian artifacts. "
-        "You have access to a curated knowledge base from the "
-        "UCLA Encyclopedia of Egyptology (UEE). "
-        "Your answers are scholarly, precise, and grounded strictly in the "
-        "provided context passages. You cite passage numbers when relevant."
-    )
-
-    # ── Artifact ──────────────────────────────────────────────────────────────
-    artifact_lines = [f"- **Name:** {artifact.name}"]
-
+    
+    parts: list[str] = []
+    
+    # ── Artifact Context ──────────────────────────────────────────────────────
+    artifact_lines = [f"Name: {artifact.name}"]
+    
     if artifact.period:
-        artifact_lines.append(f"- **Period:** {artifact.period}")
-
+        artifact_lines.append(f"Period: {artifact.period}")
+    
     if artifact.material:
-        artifact_lines.append(f"- **Material:** {artifact.material}")
-
+        artifact_lines.append(f"Material: {artifact.material}")
+    
     if artifact.place_of_discovery:
-        artifact_lines.append(f"- **Place of discovery:** {artifact.place_of_discovery}")
-
-    artifact_section = "## Artifact Under Discussion\n" + "\n".join(artifact_lines)
-
-    # ── Retrieved passages ────────────────────────────────────────────────────
+        artifact_lines.append(f"Place of discovery: {artifact.place_of_discovery}")
+    
+    parts.append("**Artifact Information:**")
+    parts.append("\n".join(artifact_lines))
+    parts.append("")  # blank line
+    
+    # ── Retrieved Knowledge Passages ──────────────────────────────────────────
     if chunks:
-        passage_lines: list[str] = []
-
+        parts.append("**Relevant Knowledge from UEE Database:**")
+        parts.append("")
+        
         for i, chunk in enumerate(chunks, start=1):
             title = chunk.get("title") or "Unknown"
             text = (chunk.get("text") or "").strip()
             page_start = chunk.get("page_start")
             page_end = chunk.get("page_end")
-
+            
             # Build a compact header for each passage
             header_parts = [f"[{i}] Source: {title}"]
             if page_start is not None:
@@ -120,38 +160,17 @@ def build_system_prompt(
                     header_parts.append(f"pp. {page_start}–{page_end}")
                 else:
                     header_parts.append(f"p. {page_start}")
-
-            passage_lines.append(", ".join(header_parts))
-            passage_lines.append(text)
-            passage_lines.append("")  # blank line between passages
-
-        passages_section = (
-            "## Relevant Knowledge (retrieved from UEE database)\n"
-            + "\n".join(passage_lines).strip()
-        )
+            
+            parts.append(", ".join(header_parts))
+            parts.append(text)
+            parts.append("")  # blank line between passages
     else:
-        passages_section = (
-            "## Relevant Knowledge\n"
-            "No relevant passages were retrieved from the database for this query."
-        )
-
-    # ── Instructions ──────────────────────────────────────────────────────────
-    instructions_section = (
-        "## Instructions\n"
-        "- Answer the user's question using ONLY the passages above as your source.\n"
-        "- If the passages do not contain enough information to answer, "
-        "say so clearly and honestly — do not fabricate details.\n"
-        "- Cite passage numbers (e.g. [1], [3]) when you draw from them.\n"
-        "- Keep your answer focused, scholarly, and concise.\n"
-        "- Use plain prose; avoid bullet lists unless specifically helpful."
-    )
-
-    # ── Assemble ──────────────────────────────────────────────────────────────
-    return "\n\n".join(
-        [
-            role_section,
-            artifact_section,
-            passages_section,
-            instructions_section,
-        ]
-    )
+        parts.append("**Relevant Knowledge:**")
+        parts.append("No relevant passages were retrieved from the database for this query.")
+        parts.append("")
+    
+    # ── User's Question ───────────────────────────────────────────────────────
+    parts.append("**Question:**")
+    parts.append(question)
+    
+    return "\n".join(parts)
