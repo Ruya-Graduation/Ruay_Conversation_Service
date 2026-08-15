@@ -1,5 +1,3 @@
 .env*
 !.env.example
 
-# YOLO model weights (large file - 49MB)
-app/best.pt
