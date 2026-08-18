@@ -1,0 +1,29 @@
+# Git & version control
+.git
+.gitignore
+
+# Python cache & virtual environments
+__pycache__
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# Environment secrets
+# .env
+# .env.*
+# !.env.example
+
+# Editor & IDE configs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Input/Output data directories
+input/
+output/
+
+# Logs & temporary files
+*.log
