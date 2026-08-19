@@ -25,8 +25,8 @@ class Settings(BaseSettings):
     hf_embedding_model: str = "microsoft/harrier-oss-v1-0.6b"
     """HuggingFace model used for generating chunk embeddings."""
 
-    hf_embedding_concurrency: int = 4
-    """Max parallel HuggingFace feature-extraction calls per ingest request."""
+    # hf_embedding_concurrency: int = 4
+    # """Max parallel HuggingFace feature-extraction calls per ingest request."""
 
     # ── MongoDB ────────────────────────────────────────────────────────────────
     mongodb_uri: str = ""
@@ -38,25 +38,25 @@ class Settings(BaseSettings):
     mongodb_collection: str = "chunks"
     """Target collection name for storing chunks + embeddings."""
 
-    # ── Chonkie / chunker ──────────────────────────────────────────────────────
-    chunker_embedding_model: str = (
-        "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-    )
-    """SentenceTransformer model used internally by Chonkie for semantic splitting.
-    This is different from the HF embedding model used for final vector storage."""
-
-    similarity_level: str = "high"
-    """Chonkie semantic similarity threshold. One of: low | medium | high."""
-
-    min_chunk_chars: int = 100
-    """Chunks shorter than this (in characters) are discarded."""
-
-    max_chunk_chars: int = 1500
-    """Soft upper bound on chunk length (in characters)."""
-
-    chunk_scope: str = "full"
-    """'full' = semantic chunks across the whole article.
-    'page' = semantic chunks per page."""
+    # # ── Chonkie / chunker [DISABLED for Ingestion] ───────────────────────────
+    # chunker_embedding_model: str = (
+    #     "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    # )
+    # """SentenceTransformer model used internally by Chonkie for semantic splitting.
+    # This is different from the HF embedding model used for final vector storage."""
+    #
+    # similarity_level: str = "high"
+    # """Chonkie semantic similarity threshold. One of: low | medium | high."""
+    #
+    # min_chunk_chars: int = 100
+    # """Chunks shorter than this (in characters) are discarded."""
+    #
+    # max_chunk_chars: int = 1500
+    # """Soft upper bound on chunk length (in characters)."""
+    #
+    # chunk_scope: str = "full"
+    # """'full' = semantic chunks across the whole article.
+    # 'page' = semantic chunks per page."""
 
     # ── SBG Chat API ───────────────────────────────────────────────────────────
     sbg_api_key: str = ""

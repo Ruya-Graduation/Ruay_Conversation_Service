@@ -23,30 +23,31 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile, status
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException, Request, status
+# from fastapi import File, UploadFile
+# from fastapi.responses import JSONResponse
 from huggingface_hub import InferenceClient
 # from ultralytics import YOLO
 # import cv2
 # import numpy as np
 
-# Make repo root importable (extract_uee_articles_v3 lives there).
-_ROOT = Path(__file__).resolve().parent.parent
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
+# # Make repo root importable (extract_uee_articles_v3 lives there).
+# _ROOT = Path(__file__).resolve().parent.parent
+# if str(_ROOT) not in sys.path:
+#     sys.path.insert(0, str(_ROOT))
 
-from extract_uee_articles_v3 import create_chonkie_semantic_chunker  # noqa: E402
+# from extract_uee_articles_v3 import create_chonkie_semantic_chunker  # noqa: E402
 
 from app.config import settings
 from app.database import (
-    check_article_exists,
+    # check_article_exists,
     create_motor_client,
-    ensure_indexes,
-    insert_chunks,
+    # ensure_indexes,
+    # insert_chunks,
     vector_search,
 )
 from app.embedder import embed_chunks
-from app.extractor import extract_chunks
+# from app.extractor import extract_chunks
 from app.chat_client import call_chat, extract_answer
 from app.prompt_builder import build_query_text, build_system_prompt, build_user_message
 from app.models import (
@@ -68,7 +69,7 @@ logger = logging.getLogger(__name__)
 # ── Application state (shared across requests) ────────────────────────────────
 
 class AppState:
-    chunker: Any = None
+    # chunker: Any = None
     hf_client: InferenceClient | None = None
     mongo_client: Any = None
     collection: Any = None
@@ -201,18 +202,18 @@ async def lifespan(app: FastAPI):
             f"Missing required config: {', '.join(missing)}"
         )
 
-    # ── Chonkie SemanticChunker ───────────────────────────────────────────────
-    logger.info(
-        "Initializing Chonkie SemanticChunker with model '%s'...",
-        settings.chunker_embedding_model,
-    )
-    app_state.chunker = create_chonkie_semantic_chunker(
-        embedding_model_name=settings.chunker_embedding_model,
-        similarity_level=settings.similarity_level,
-        min_chunk_chars=settings.min_chunk_chars,
-        max_chunk_chars=settings.max_chunk_chars,
-    )
-    logger.info("Chonkie SemanticChunker ready.")
+    # # ── Chonkie SemanticChunker [DISABLED for Ingestion] ────────────────────
+    # logger.info(
+    #     "Initializing Chonkie SemanticChunker with model '%s'...",
+    #     settings.chunker_embedding_model,
+    # )
+    # app_state.chunker = create_chonkie_semantic_chunker(
+    #     embedding_model_name=settings.chunker_embedding_model,
+    #     similarity_level=settings.similarity_level,
+    #     min_chunk_chars=settings.min_chunk_chars,
+    #     max_chunk_chars=settings.max_chunk_chars,
+    # )
+    # logger.info("Chonkie SemanticChunker ready.")
 
     # ── HuggingFace InferenceClient ───────────────────────────────────────────
     logger.info(
@@ -231,7 +232,7 @@ async def lifespan(app: FastAPI):
     app_state.collection = app_state.mongo_client[settings.mongodb_db][
         settings.mongodb_collection
     ]
-    await ensure_indexes(app_state.collection)
+    # await ensure_indexes(app_state.collection)
     logger.info(
         "MongoDB connected → %s / %s",
         settings.mongodb_db,
@@ -515,140 +516,144 @@ async def health():
 # #     }
 
 
-@app.post("/ingest", tags=["Ingestion"])
-async def ingest(file: UploadFile = File(...)):
-    """
-    Ingest a single PDF file.
-
-    Steps:
-      1. Validate the upload is a PDF.
-      2. Check for duplicate article (reject if already in DB).
-      3. Extract text + semantic chunks via Chonkie.
-      4. Generate HuggingFace embeddings for each chunk (max 4 concurrent calls).
-      5. Insert chunks (with embeddings) into MongoDB.
-
-    Returns a summary of what was stored.
-    """
-
-    # ── 1. Validate content type ──────────────────────────────────────────────
-    if file.content_type not in ("application/pdf", "application/octet-stream"):
-        # Also accept by extension in case content-type is generic.
-        if not (file.filename or "").lower().endswith(".pdf"):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Only PDF files are accepted. Please upload a .pdf file.",
-            )
-
-    file_name = file.filename or "upload.pdf"
-    logger.info("Received upload: '%s'", file_name)
-
-    # ── 2. Read bytes ─────────────────────────────────────────────────────────
-    try:
-        pdf_bytes = await file.read()
-    except Exception as exc:
-        logger.error("Failed to read uploaded file: %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Could not read uploaded file: {exc}",
-        )
-
-    if not pdf_bytes:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Uploaded file is empty.",
-        )
-
-    # ── 3. Extract chunks (CPU-bound, runs in thread pool) ────────────────────
-    try:
-        article, chunks = await extract_chunks(
-            pdf_bytes=pdf_bytes,
-            file_name=file_name,
-            chunker=app_state.chunker,
-            min_chunk_chars=settings.min_chunk_chars,
-            chunk_scope=settings.chunk_scope,
-        )
-    except Exception as exc:
-        logger.error("Extraction failed for '%s': %s", file_name, exc)
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"PDF extraction failed: {exc}",
-        )
-
-    article_id = article["article_id"]
-    logger.info(
-        "'%s' → article_id=%s, %d chunks extracted",
-        file_name,
-        article_id,
-        len(chunks),
-    )
-
-    # ── 4. Reject duplicates ───────────────────────────────────────────────────
-    try:
-        already_exists = await check_article_exists(
-            app_state.collection, article_id
-        )
-    except Exception as exc:
-        logger.error("MongoDB duplicate check failed: %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Database error during duplicate check: {exc}",
-        )
-
-    if already_exists:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                f"Article '{file_name}' (id: {article_id}) has already been ingested. "
-                "Duplicate uploads are not allowed. "
-                "If you need to re-ingest, delete the existing records first."
-            ),
-        )
-
-    # ── 5. Embed chunks ────────────────────────────────────────────────────────
-    try:
-        chunks = await embed_chunks(
-            chunks=chunks,
-            client=app_state.hf_client,
-            model=settings.hf_embedding_model,
-            concurrency=settings.hf_embedding_concurrency,
-        )
-    except Exception as exc:
-        logger.error("Embedding failed for '%s': %s", file_name, exc)
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"HuggingFace embedding error: {exc}",
-        )
-
-    logger.info(
-        "Embeddings generated for %d chunks of '%s'.", len(chunks), file_name
-    )
-
-    # ── 6. Store in MongoDB ────────────────────────────────────────────────────
-    try:
-        stored_count = await insert_chunks(app_state.collection, chunks)
-    except Exception as exc:
-        logger.error("MongoDB insert failed for '%s': %s", file_name, exc)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Database insert error: {exc}",
-        )
-
-    logger.info(
-        "Stored %d / %d chunks for '%s'.", stored_count, len(chunks), file_name
-    )
-
-    return JSONResponse(
-        status_code=status.HTTP_200_OK,
-        content={
-            "status": "ok",
-            "file_name": file_name,
-            "article_id": article_id,
-            "title": article.get("title", ""),
-            "page_count": article.get("page_count"),
-            "chunks_extracted": len(chunks),
-            "chunks_stored": stored_count,
-        },
-    )
+# # ───────────────────────────────────────────────────────────────────────────────
+# # Ingestion Endpoint - [DISABLED / COMMENTED OUT]
+# # ───────────────────────────────────────────────────────────────────────────────
+#
+# # @app.post("/ingest", tags=["Ingestion"])
+# # async def ingest(file: UploadFile = File(...)):
+# #     """
+# #     Ingest a single PDF file.
+# #
+# #     Steps:
+# #       1. Validate the upload is a PDF.
+# #       2. Check for duplicate article (reject if already in DB).
+# #       3. Extract text + semantic chunks via Chonkie.
+# #       4. Generate HuggingFace embeddings for each chunk (max 4 concurrent calls).
+# #       5. Insert chunks (with embeddings) into MongoDB.
+# #
+# #     Returns a summary of what was stored.
+# #     """
+# #
+# #     # ── 1. Validate content type ──────────────────────────────────────────────
+# #     if file.content_type not in ("application/pdf", "application/octet-stream"):
+# #         # Also accept by extension in case content-type is generic.
+# #         if not (file.filename or "").lower().endswith(".pdf"):
+# #             raise HTTPException(
+# #                 status_code=status.HTTP_400_BAD_REQUEST,
+# #                 detail="Only PDF files are accepted. Please upload a .pdf file.",
+# #             )
+# #
+# #     file_name = file.filename or "upload.pdf"
+# #     logger.info("Received upload: '%s'", file_name)
+# #
+# #     # ── 2. Read bytes ─────────────────────────────────────────────────────────
+# #     try:
+# #         pdf_bytes = await file.read()
+# #     except Exception as exc:
+# #         logger.error("Failed to read uploaded file: %s", exc)
+# #         raise HTTPException(
+# #             status_code=status.HTTP_400_BAD_REQUEST,
+# #             detail=f"Could not read uploaded file: {exc}",
+# #         )
+# #
+# #     if not pdf_bytes:
+# #         raise HTTPException(
+# #             status_code=status.HTTP_400_BAD_REQUEST,
+# #             detail="Uploaded file is empty.",
+# #         )
+# #
+# #     # ── 3. Extract chunks (CPU-bound, runs in thread pool) ────────────────────
+# #     try:
+# #         article, chunks = await extract_chunks(
+# #             pdf_bytes=pdf_bytes,
+# #             file_name=file_name,
+# #             chunker=app_state.chunker,
+# #             min_chunk_chars=settings.min_chunk_chars,
+# #             chunk_scope=settings.chunk_scope,
+# #         )
+# #     except Exception as exc:
+# #         logger.error("Extraction failed for '%s': %s", file_name, exc)
+# #         raise HTTPException(
+# #             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+# #             detail=f"PDF extraction failed: {exc}",
+# #         )
+# #
+# #     article_id = article["article_id"]
+# #     logger.info(
+# #         "'%s' → article_id=%s, %d chunks extracted",
+# #         file_name,
+# #         article_id,
+# #         len(chunks),
+# #     )
+# #
+# #     # ── 4. Reject duplicates ───────────────────────────────────────────────────
+# #     try:
+# #         already_exists = await check_article_exists(
+# #             app_state.collection, article_id
+# #         )
+# #     except Exception as exc:
+# #         logger.error("MongoDB duplicate check failed: %s", exc)
+# #         raise HTTPException(
+# #             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+# #             detail=f"Database error during duplicate check: {exc}",
+# #         )
+# #
+# #     if already_exists:
+# #         raise HTTPException(
+# #             status_code=status.HTTP_409_CONFLICT,
+# #             detail=(
+# #                 f"Article '{file_name}' (id: {article_id}) has already been ingested. "
+# #                 "Duplicate uploads are not allowed. "
+# #                 "If you need to re-ingest, delete the existing records first."
+# #             ),
+# #         )
+# #
+# #     # ── 5. Embed chunks ────────────────────────────────────────────────────────
+# #     try:
+# #         chunks = await embed_chunks(
+# #             chunks=chunks,
+# #             client=app_state.hf_client,
+# #             model=settings.hf_embedding_model,
+# #             concurrency=settings.hf_embedding_concurrency,
+# #         )
+# #     except Exception as exc:
+# #         logger.error("Embedding failed for '%s': %s", file_name, exc)
+# #         raise HTTPException(
+# #             status_code=status.HTTP_502_BAD_GATEWAY,
+# #             detail=f"HuggingFace embedding error: {exc}",
+# #         )
+# #
+# #     logger.info(
+# #         "Embeddings generated for %d chunks of '%s'.", len(chunks), file_name
+# #     )
+# #
+# #     # ── 6. Store in MongoDB ────────────────────────────────────────────────────
+# #     try:
+# #         stored_count = await insert_chunks(app_state.collection, chunks)
+# #     except Exception as exc:
+# #         logger.error("MongoDB insert failed for '%s': %s", file_name, exc)
+# #         raise HTTPException(
+# #             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+# #             detail=f"Database insert error: {exc}",
+# #         )
+# #
+# #     logger.info(
+# #         "Stored %d / %d chunks for '%s'.", stored_count, len(chunks), file_name
+# #     )
+# #
+# #     return JSONResponse(
+# #         status_code=status.HTTP_200_OK,
+# #         content={
+# #             "status": "ok",
+# #             "file_name": file_name,
+# #             "article_id": article_id,
+# #             "title": article.get("title", ""),
+# #             "page_count": article.get("page_count"),
+# #             "chunks_extracted": len(chunks),
+# #             "chunks_stored": stored_count,
+# #         },
+# #     )
 
 
 # ───────────────────────────────────────────────────────────────────────────────

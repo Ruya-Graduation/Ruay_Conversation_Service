@@ -23,69 +23,53 @@ def create_motor_client(uri: str) -> AsyncIOMotorClient:
     return AsyncIOMotorClient(uri)
 
 
-async def ensure_indexes(collection: AsyncIOMotorCollection) -> None:
-    """
-    Ensure a partial unique index exists on chunk_id.
-
-    Why partial?  The collection may already contain documents where chunk_id
-    is null (e.g. legacy records).  A plain unique index would fail because
-    MongoDB treats multiple null values as duplicates of each other.
-
-    The partialFilterExpression restricts the unique constraint to documents
-    where chunk_id is a non-null string — exactly what every ingested chunk
-    will have — so legacy nulls are ignored entirely.
-    """
-    await collection.create_index(
-        "chunk_id",
-        unique=True,
-        partialFilterExpression={"chunk_id": {"$exists": True, "$type": "string"}},
-    )
-    logger.info("MongoDB partial unique index on 'chunk_id' (string values only) is ready.")
-
-
-async def check_article_exists(
-    collection: AsyncIOMotorCollection,
-    article_id: str,
-) -> bool:
-    """
-    Return True if any chunk with the given article_id already exists.
-    Used to reject duplicate uploads before attempting any inserts.
-    """
-    doc = await collection.find_one({"article_id": article_id}, projection={"_id": 1})
-    return doc is not None
-
-
-async def insert_chunks(
-    collection: AsyncIOMotorCollection,
-    chunks: list[dict[str, Any]],
-) -> int:
-    """
-    Insert a batch of chunks.
-
-    Because duplicates are REJECTED (not upserted), we use insert_many with
-    ordered=False so that one duplicate does not block unrelated inserts.
-    In practice, we guard against duplicates at the API layer (check_article_exists)
-    before this function is called, so a BulkWriteError here would be unusual.
-
-    Returns:
-        Number of successfully inserted documents.
-    """
-    if not chunks:
-        return 0
-
-    try:
-        result = await collection.insert_many(chunks, ordered=False)
-        return len(result.inserted_ids)
-    except BulkWriteError as bwe:
-        # Some writes succeeded, some were duplicates.
-        inserted = bwe.details.get("nInserted", 0)
-        n_errors = len(bwe.details.get("writeErrors", []))
-        logger.warning(
-            "BulkWriteError: %d inserted, %d duplicates/errors skipped.",
-            inserted,
-            n_errors,
-        )
-        return inserted
+# # ── Ingestion Helpers [DISABLED for Ingestion] ─────────────────────────────
+# async def ensure_indexes(collection: AsyncIOMotorCollection) -> None:
+#     """
+#     Ensure a partial unique index exists on chunk_id.
+#     """
+#     await collection.create_index(
+#         "chunk_id",
+#         unique=True,
+#         partialFilterExpression={"chunk_id": {"$exists": True, "$type": "string"}},
+#     )
+#     logger.info("MongoDB partial unique index on 'chunk_id' (string values only) is ready.")
+#
+#
+# async def check_article_exists(
+#     collection: AsyncIOMotorCollection,
+#     article_id: str,
+# ) -> bool:
+#     """
+#     Return True if any chunk with the given article_id already exists.
+#     Used to reject duplicate uploads before attempting any inserts.
+#     """
+#     doc = await collection.find_one({"article_id": article_id}, projection={"_id": 1})
+#     return doc is not None
+#
+#
+# async def insert_chunks(
+#     collection: AsyncIOMotorCollection,
+#     chunks: list[dict[str, Any]],
+# ) -> int:
+#     """
+#     Insert a batch of chunks.
+#     """
+#     if not chunks:
+#         return 0
+#
+#     try:
+#         result = await collection.insert_many(chunks, ordered=False)
+#         return len(result.inserted_ids)
+#     except BulkWriteError as bwe:
+#         inserted = bwe.details.get("nInserted", 0)
+#         n_errors = len(bwe.details.get("writeErrors", []))
+#         logger.warning(
+#             "BulkWriteError: %d inserted, %d duplicates/errors skipped.",
+#             inserted,
+#             n_errors,
+#         )
+#         return inserted
 
 
 async def vector_search(
