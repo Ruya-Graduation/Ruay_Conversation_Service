@@ -27,11 +27,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# ── FIX: Force Headless OpenCV ─────────────────────────────────────────────
-# Ultralytics aggressively installs standard 'opencv-python' as a dependency.
-# We must explicitly uninstall it and replace it with the headless version.
-RUN pip uninstall opencv-python opencv-contrib-python -y && \
-    pip install --no-cache-dir opencv-python-headless
+# # ── Optional: Force Headless OpenCV (only needed if YOLO/OpenCV is enabled) ───
+# RUN pip uninstall opencv-python opencv-contrib-python -y && \
+#     pip install --no-cache-dir opencv-python-headless
 
 # Copy application source code and models
 COPY . .
