@@ -332,259 +332,102 @@ async def call_chat(
 #     return result
 
 #OLD VERSION WITH BIGS
-# def extract_answer(response_json: dict) -> dict:
-#     """
-#     Extract structured response data from the LLM API response.
-
-#     Returns a dictionary with separated fields:
-#     - output_text: The actual answer from the model
-#     - request_id: Request identifier (if available)
-#     - model_id: Model used (if available)
-#     - provider: LLM provider (if available)
-#     - usage: Token usage statistics
-#     - cost: Cost information (if available)
-#     - status: Request status (if available)
-#     - (any other fields from the response)
-
-#     Supports multiple response formats:
-#     - SBG style
-#     - Anthropic/Bedrock style
-#     - OpenAI/OpenRouter style
-#     - Generic text/response/answer formats
-
-#     This allows the .NET server to access the actual answer
-#     separately while preserving all response metadata.
-#     """
-
-#     result = {}
-
-#     # ---------------------------------------------------------
-#     # Extract the actual answer text
-#     # ---------------------------------------------------------
-#     output_text = None
-
-#     # Shape:
-#     # {
-#     #     "output_text": "..."
-#     # }
-#     if "output_text" in response_json:
-#         value = response_json["output_text"]
-
-#         if value is not None:
-#             output_text = str(value)
-
-#     # Shape:
-#     # {
-#     #     "content": [
-#     #         {
-#     #             "text": "..."
-#     #         }
-#     #     ]
-#     # }
-#     #
-#     # Anthropic / Bedrock style
-#     elif "content" in response_json:
-#         content = response_json["content"]
-
-#         if isinstance(content, list) and content:
-#             first = content[0]
-
-#             if isinstance(first, dict) and "text" in first:
-#                 output_text = str(first["text"])
-
-#             elif isinstance(first, str):
-#                 output_text = first
-
-#         elif isinstance(content, str):
-#             output_text = content
-
-#     # Shape:
-#     #
-#     # {
-#     #     "choices": [
-#     #         {
-#     #             "message": {
-#     #                 "role": "assistant",
-#     #                 "content": "..."
-#     #             }
-#     #         }
-#     #     ]
-#     # }
-#     #
-#     # OpenAI / OpenRouter style
-#     elif "choices" in response_json:
-#         choices = response_json["choices"]
-
-#         if isinstance(choices, list) and choices:
-#             first_choice = choices[0]
-
-#             if isinstance(first_choice, dict):
-#                 message = first_choice.get("message", {})
-
-#                 if isinstance(message, dict):
-#                     content = message.get("content")
-
-#                     if isinstance(content, str):
-#                         output_text = content
-
-#                     # Some providers may return structured content
-#                     elif isinstance(content, list):
-#                         text_parts = []
-
-#                         for item in content:
-#                             if isinstance(item, dict):
-#                                 text = item.get("text")
-
-#                                 if isinstance(text, str):
-#                                     text_parts.append(text)
-
-#                             elif isinstance(item, str):
-#                                 text_parts.append(item)
-
-#                         if text_parts:
-#                             output_text = "".join(text_parts)
-
-#     # Generic response formats
-#     #
-#     # {
-#     #     "text": "...",
-#     #     "response": "...",
-#     #     "answer": "...",
-#     #     "output": "...",
-#     #     "result": "..."
-#     # }
-#     else:
-#         for key in (
-#             "text",
-#             "response",
-#             "answer",
-#             "output",
-#             "result",
-#         ):
-#             value = response_json.get(key)
-
-#             if isinstance(value, str):
-#                 output_text = value
-#                 break
-
-#     # ---------------------------------------------------------
-#     # Fallback
-#     # ---------------------------------------------------------
-#     # If no known response format was found, return the entire
-#     # response as JSON rather than returning an empty answer.
-#     # ---------------------------------------------------------
-#     if output_text is None:
-#         import json
-
-#         output_text = json.dumps(
-#             response_json,
-#             ensure_ascii=False,
-#         )
-
-#     result["output_text"] = output_text
-
-#     # ---------------------------------------------------------
-#     # Preserve all response metadata
-#     # ---------------------------------------------------------
-#     #
-#     # OpenRouter example:
-#     #
-#     # id
-#     # object
-#     # created
-#     # model
-#     # provider
-#     # choices
-#     # usage
-#     # etc.
-#     #
-#     # We keep all of it so the .NET server can access it.
-#     # ---------------------------------------------------------
-#     for key, value in response_json.items():
-#         if key != "output_text":
-#             result[key] = value
-
-#     return result
-
 def extract_answer(response_json: dict) -> dict:
     """
-    Extract the actual LLM answer while preserving the original
-    gateway response metadata.
+    Extract structured response data from the LLM API response.
 
-    For OpenAI/OpenRouter-style responses:
-        response_json["choices"][0]["message"]["content"]
+    Returns a dictionary with separated fields:
+    - output_text: The actual answer from the model
+    - request_id: Request identifier (if available)
+    - model_id: Model used (if available)
+    - provider: LLM provider (if available)
+    - usage: Token usage statistics
+    - cost: Cost information (if available)
+    - status: Request status (if available)
+    - (any other fields from the response)
 
-    is mapped to:
-        result["output_text"]
+    Supports multiple response formats:
+    - SBG style
+    - Anthropic/Bedrock style
+    - OpenAI/OpenRouter style
+    - Generic text/response/answer formats
 
-    All other response metadata is preserved.
+    This allows the .NET server to access the actual answer
+    separately while preserving all response metadata.
     """
 
     result = {}
 
+    # ---------------------------------------------------------
+    # Extract the actual answer text
+    # ---------------------------------------------------------
     output_text = None
 
-    # ---------------------------------------------------------
-    # 1. Direct output_text format
-    # ---------------------------------------------------------
+    # Shape:
+    # {
+    #     "output_text": "..."
+    # }
+    if "output_text" in response_json:
+        value = response_json["output_text"]
 
-    if isinstance(response_json.get("output_text"), str):
-        output_text = response_json["output_text"]
+        if value is not None:
+            output_text = str(value)
 
-    # ---------------------------------------------------------
-    # 2. Anthropic / Bedrock style
-    # ---------------------------------------------------------
-
+    # Shape:
+    # {
+    #     "content": [
+    #         {
+    #             "text": "..."
+    #         }
+    #     ]
+    # }
+    #
+    # Anthropic / Bedrock style
     elif "content" in response_json:
         content = response_json["content"]
 
-        if isinstance(content, str):
+        if isinstance(content, list) and content:
+            first = content[0]
+
+            if isinstance(first, dict) and "text" in first:
+                output_text = str(first["text"])
+
+            elif isinstance(first, str):
+                output_text = first
+
+        elif isinstance(content, str):
             output_text = content
 
-        elif isinstance(content, list):
-            text_parts = []
-
-            for item in content:
-                if isinstance(item, dict):
-                    text = item.get("text")
-
-                    if isinstance(text, str):
-                        text_parts.append(text)
-
-                elif isinstance(item, str):
-                    text_parts.append(item)
-
-            if text_parts:
-                output_text = "".join(text_parts)
-
-    # ---------------------------------------------------------
-    # 3. OpenAI / OpenRouter style
-    # ---------------------------------------------------------
-
-    elif isinstance(response_json.get("choices"), list):
+    # Shape:
+    #
+    # {
+    #     "choices": [
+    #         {
+    #             "message": {
+    #                 "role": "assistant",
+    #                 "content": "..."
+    #             }
+    #         }
+    #     ]
+    # }
+    #
+    # OpenAI / OpenRouter style
+    elif "choices" in response_json:
         choices = response_json["choices"]
 
-        if choices:
+        if isinstance(choices, list) and choices:
             first_choice = choices[0]
 
             if isinstance(first_choice, dict):
-
-                # Preserve finish reason
-                result["finish_reason"] = first_choice.get("finish_reason")
-                result["native_finish_reason"] = first_choice.get(
-                    "native_finish_reason"
-                )
-
-                message = first_choice.get("message")
+                message = first_choice.get("message", {})
 
                 if isinstance(message, dict):
                     content = message.get("content")
 
-                    # Normal response
                     if isinstance(content, str):
                         output_text = content
 
-                    # Some providers return structured content
+                    # Some providers may return structured content
                     elif isinstance(content, list):
                         text_parts = []
 
@@ -601,11 +444,16 @@ def extract_answer(response_json: dict) -> dict:
                         if text_parts:
                             output_text = "".join(text_parts)
 
-    # ---------------------------------------------------------
-    # 4. Generic formats
-    # ---------------------------------------------------------
-
-    elif output_text is None:
+    # Generic response formats
+    #
+    # {
+    #     "text": "...",
+    #     "response": "...",
+    #     "answer": "...",
+    #     "output": "...",
+    #     "result": "..."
+    # }
+    else:
         for key in (
             "text",
             "response",
@@ -620,20 +468,172 @@ def extract_answer(response_json: dict) -> dict:
                 break
 
     # ---------------------------------------------------------
-    # 5. Never dump the entire gateway response into answer
+    # Fallback
     # ---------------------------------------------------------
-
+    # If no known response format was found, return the entire
+    # response as JSON rather than returning an empty answer.
+    # ---------------------------------------------------------
     if output_text is None:
-        output_text = ""
+        import json
+
+        output_text = json.dumps(
+            response_json,
+            ensure_ascii=False,
+        )
 
     result["output_text"] = output_text
 
     # ---------------------------------------------------------
-    # 6. Preserve original response metadata
+    # Preserve all response metadata
     # ---------------------------------------------------------
-
+    #
+    # OpenRouter example:
+    #
+    # id
+    # object
+    # created
+    # model
+    # provider
+    # choices
+    # usage
+    # etc.
+    #
+    # We keep all of it so the .NET server can access it.
+    # ---------------------------------------------------------
     for key, value in response_json.items():
         if key != "output_text":
             result[key] = value
 
     return result
+
+# def extract_answer(response_json: dict) -> dict:
+#     """
+#     Extract the actual LLM answer while preserving the original
+#     gateway response metadata.
+
+#     For OpenAI/OpenRouter-style responses:
+#         response_json["choices"][0]["message"]["content"]
+
+#     is mapped to:
+#         result["output_text"]
+
+#     All other response metadata is preserved.
+#     """
+
+#     result = {}
+
+#     output_text = None
+
+#     # ---------------------------------------------------------
+#     # 1. Direct output_text format
+#     # ---------------------------------------------------------
+
+#     if isinstance(response_json.get("output_text"), str):
+#         output_text = response_json["output_text"]
+
+#     # ---------------------------------------------------------
+#     # 2. Anthropic / Bedrock style
+#     # ---------------------------------------------------------
+
+#     elif "content" in response_json:
+#         content = response_json["content"]
+
+#         if isinstance(content, str):
+#             output_text = content
+
+#         elif isinstance(content, list):
+#             text_parts = []
+
+#             for item in content:
+#                 if isinstance(item, dict):
+#                     text = item.get("text")
+
+#                     if isinstance(text, str):
+#                         text_parts.append(text)
+
+#                 elif isinstance(item, str):
+#                     text_parts.append(item)
+
+#             if text_parts:
+#                 output_text = "".join(text_parts)
+
+#     # ---------------------------------------------------------
+#     # 3. OpenAI / OpenRouter style
+#     # ---------------------------------------------------------
+
+#     elif isinstance(response_json.get("choices"), list):
+#         choices = response_json["choices"]
+
+#         if choices:
+#             first_choice = choices[0]
+
+#             if isinstance(first_choice, dict):
+
+#                 # Preserve finish reason
+#                 result["finish_reason"] = first_choice.get("finish_reason")
+#                 result["native_finish_reason"] = first_choice.get(
+#                     "native_finish_reason"
+#                 )
+
+#                 message = first_choice.get("message")
+
+#                 if isinstance(message, dict):
+#                     content = message.get("content")
+
+#                     # Normal response
+#                     if isinstance(content, str):
+#                         output_text = content
+
+#                     # Some providers return structured content
+#                     elif isinstance(content, list):
+#                         text_parts = []
+
+#                         for item in content:
+#                             if isinstance(item, dict):
+#                                 text = item.get("text")
+
+#                                 if isinstance(text, str):
+#                                     text_parts.append(text)
+
+#                             elif isinstance(item, str):
+#                                 text_parts.append(item)
+
+#                         if text_parts:
+#                             output_text = "".join(text_parts)
+
+#     # ---------------------------------------------------------
+#     # 4. Generic formats
+#     # ---------------------------------------------------------
+
+#     elif output_text is None:
+#         for key in (
+#             "text",
+#             "response",
+#             "answer",
+#             "output",
+#             "result",
+#         ):
+#             value = response_json.get(key)
+
+#             if isinstance(value, str):
+#                 output_text = value
+#                 break
+
+#     # ---------------------------------------------------------
+#     # 5. Never dump the entire gateway response into answer
+#     # ---------------------------------------------------------
+
+#     if output_text is None:
+#         output_text = ""
+
+#     result["output_text"] = output_text
+
+#     # ---------------------------------------------------------
+#     # 6. Preserve original response metadata
+#     # ---------------------------------------------------------
+
+#     for key, value in response_json.items():
+#         if key != "output_text":
+#             result[key] = value
+
+#     return result

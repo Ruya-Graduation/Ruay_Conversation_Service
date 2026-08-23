@@ -756,9 +756,11 @@ async def conversation(body: ConversationRequest):
         messages=llm_messages,
         max_tokens=settings.llm_max_tokens,
     )
+    logger.info(raw_response)
 
     # Extract structured response (dict with output_text + metadata)
     llm_data = extract_answer(raw_response)
+    logger.info(llm_data)
     answer = llm_data.get("output_text", "")
 
     logger.info(
