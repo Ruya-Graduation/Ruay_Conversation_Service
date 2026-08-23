@@ -84,6 +84,7 @@ def _call_chat_sync(
         "model": model_id,
         "messages": llm_messages,
         "max_tokens": max_tokens,
+        "reasoning_effort": "minimal"
     }
 
     logger.info(
