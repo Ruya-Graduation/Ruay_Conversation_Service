@@ -781,22 +781,43 @@ async def conversation(body: ConversationRequest):
         for c in retrieved
     ]
 
+    # ---------------------------------------------------------
+    # Extract OpenRouter metadata
+    # ---------------------------------------------------------
+
+    usage = llm_data.get("usage") or {}
+
+    actual_cost = usage.get("cost")
+
     # Prepare additional metadata (all fields except output_text)
     additional_metadata = {
         k: v for k, v in llm_data.items() 
-        if k not in ("output_text", "model_id")  # Already in response
+        if k not in ("output_text", "model_id""request_id",
+        "region",
+        "usage",
+        "estimated_cost_usd",
+        "actual_cost_usd",
+        "status",)  # Already in response
     }
 
     return ConversationResponse(
         answer=answer,
         retrieved_chunks=len(retrieved),
-        model_id=llm_data.get("model_id", settings.llm_model_id),
+        model_id=llm_data.get("model", settings.llm_model_id),
         sources=sources,
-        request_id=llm_data.get("request_id"),
+        request_id=llm_data.get("id"),
         region=llm_data.get("region"),
-        usage=llm_data.get("usage"),
-        estimated_cost_usd=llm_data.get("estimated_cost_usd"),
-        actual_cost_usd=llm_data.get("actual_cost_usd"),
+        usage=usage,
+        estimated_cost_usd=(
+        str(llm_data["estimated_cost_usd"])
+        if llm_data.get("estimated_cost_usd") is not None
+        else None
+        ),
+        actual_cost_usd=(
+        str(actual_cost)
+        if actual_cost is not None
+        else None
+        ),
         status=llm_data.get("status"),
         llm_response_metadata=additional_metadata if additional_metadata else None,
     )

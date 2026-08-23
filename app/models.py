@@ -70,8 +70,8 @@ class ConversationResponse(BaseModel):
     request_id: str | None = Field(None, description="Request ID from LLM API")
     region: str | None = Field(None, description="Deployment region")
     usage: dict | None = Field(None, description="Token usage statistics")
-    estimated_cost_usd: str | None = Field(None, description="Estimated cost in USD")
-    actual_cost_usd: str | None = Field(None, description="Actual cost in USD")
+    estimated_cost_usd: float | None = Field(None, description="Estimated cost in USD")
+    actual_cost_usd: float | None = Field(None, description="Actual cost in USD")
     status: str | None = Field(None, description="Request status")
     llm_response_metadata: dict | None = Field(
         None, description="Any additional metadata from LLM response"
